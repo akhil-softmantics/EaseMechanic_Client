@@ -9,6 +9,8 @@ import 'package:google_mlkit_language_id/google_mlkit_language_id.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
+import '../../../../core/constants/supported_languages.dart';
+
 class HomeController extends GetxController {
   final RxString selectedFromLanguage = 'English'.obs;
   final RxString selectedToLanguage = 'Spanish'.obs;
@@ -174,14 +176,29 @@ class HomeController extends GetxController {
 
     try {
       isLoading.value = true;
-
       final file = File(selectedFilePath.value!);
+
+      // Validate file exists
+      if (!file.existsSync()) {
+        throw Exception('Selected file does not exist');
+      }
+
+      final targetLanguageCode =
+          LanguageMapper.getLanguageCode(selectedToLanguage.value);
+
+      // Print debug info
+      print('Converting PDF: ${file.path}');
+      print('Target language: $targetLanguageCode');
+
       final response = await ApiClient.translatePdf(
         pdfFile: file,
-        targetLanguage: selectedToLanguage.value.toLowerCase().substring(0, 2),
+        targetLanguage: targetLanguageCode,
       );
 
       if (response['success']) {
+        final translatedFile = response['file'] as File;
+        print('Translated PDF created at: ${translatedFile.path}');
+
         Get.snackbar(
           'Success',
           'PDF translated successfully!',
@@ -190,19 +207,15 @@ class HomeController extends GetxController {
           snackPosition: SnackPosition.TOP,
         );
 
-        final translatedFile = response['file'] as File;
-        print(
-            'the translated pdf is : -------------------------------------------$translatedFile');
-
-        // Show share dialog
         await shareTranslatedPDF(translatedFile);
       } else {
         throw Exception(response['error']);
       }
     } catch (e) {
+      print('Conversion error: $e');
       Get.snackbar(
         'Error',
-        'Failed to convert PDF: $e',
+        'Failed to convert PDF: ${e.toString()}',
         backgroundColor: Colors.red.withOpacity(0.7),
         colorText: Colors.white,
         snackPosition: SnackPosition.BOTTOM,
