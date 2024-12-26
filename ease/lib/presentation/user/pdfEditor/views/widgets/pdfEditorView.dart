@@ -1,13 +1,13 @@
-import 'package:ease/presentation/user/pdfEditor/views/widgets/drawingPainter.dart';
-import 'package:ease/presentation/user/pdfEditor/views/widgets/toolBar.dart';
+// Update your PDFEditorView to include the new overlay and gesture detection
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../../controller/pdfEditor_controller.dart';
+import 'drawingPainter.dart';
 import 'pdfEditingOverlay.dart';
 import 'pdfRenderView.dart';
+import 'toolBar.dart';
 
-// Update PDFEditorView to include new features
 class PDFEditorView extends StatelessWidget {
   PDFEditorView({Key? key}) : super(key: key);
 
@@ -39,16 +39,21 @@ class PDFEditorView extends StatelessWidget {
       ),
       body: Stack(
         children: [
-          Obx(
-            () => controller.isLoading.value
-                ? const Center(child: CircularProgressIndicator())
-                : PDFRenderView(
-                    document: controller.document.value,
-                    currentPage: controller.currentPage.value,
-                    scale: controller.scale.value,
-                  ),
+          GestureDetector(
+            onPanDown: (details) => controller.handleTextSelection(details.localPosition),
+            onPanUpdate: (details) => controller.selectionEnd = details.localPosition,
+            child: Obx(
+              () => controller.isLoading.value
+                  ? const Center(child: CircularProgressIndicator())
+                  : PDFRenderView(
+                      document: controller.document.value,
+                      currentPage: controller.currentPage.value,
+                      scale: controller.scale.value,
+                    ),
+            ),
           ),
           const EditingOverlay(),
+          const TextSelectionOverlayForPDf(),
           const PDFDrawingOverlay(),
           const ToolbarWidget(),
         ],
@@ -56,4 +61,3 @@ class PDFEditorView extends StatelessWidget {
     );
   }
 }
-

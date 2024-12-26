@@ -59,6 +59,14 @@ class ToolbarWidget extends StatelessWidget {
             ),
             Obx(() => IconButton(
                   icon: Icon(
+                    Icons.text_format,
+                    color: controller.isTextSelectionMode.value ? Colors.blue : null,
+                  ),
+                  onPressed: controller.toggleTextSelectionMode,
+                  tooltip: 'Select Text',
+                )),
+            Obx(() => IconButton(
+                  icon: Icon(
                     Icons.draw,
                     color: controller.isDrawingMode.value ? Colors.blue : null,
                   ),

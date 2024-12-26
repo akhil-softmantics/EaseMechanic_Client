@@ -160,3 +160,17 @@ class PDFAnnotation {
     );
   }
 }
+
+
+// First, let's create a model for text selections
+class PDFTextSelection {
+  final Rect bounds;
+  final String text;
+  final int pageNumber;
+  
+  PDFTextSelection({
+    required this.bounds,
+    required this.text,
+    required this.pageNumber,
+  });
+}

@@ -31,6 +31,12 @@ class PDFController extends GetxController {
   Color currentColor = Colors.black;
   double currentFontSize = 14.0;
 
+  final RxList<PDFTextSelection> selectedTexts = <PDFTextSelection>[].obs;
+  final RxBool isTextSelectionMode = false.obs;
+  final RxBool isEditingText = false.obs;
+  Offset? selectionStart;
+  Offset? selectionEnd;
+
   @override
   void onInit() {
     super.onInit();
@@ -40,9 +46,99 @@ class PDFController extends GetxController {
 
   @override
   void onClose() {
+    PDFRenderer.closeRenderer();
     textEditingController.dispose();
     saveRecentFiles();
     super.onClose();
+  }
+
+  // Add this method to toggle text selection mode
+  void toggleTextSelectionMode() {
+    isTextSelectionMode.value = !isTextSelectionMode.value;
+    isDrawingMode.value = false;
+    isHighlightMode.value = false;
+    isTextMode.value = false;
+    update();
+  }
+
+  // Handle text selection
+  void handleTextSelection(Offset position) {
+    if (!isTextSelectionMode.value) return;
+
+    if (selectionStart == null) {
+      selectionStart = position;
+    } else {
+      selectionEnd = position;
+      _processTextSelection();
+    }
+    update();
+  }
+
+  // Process the text selection
+  Future<void> _processTextSelection() async {
+    try {
+      final Rect selectionRect =
+          Rect.fromPoints(selectionStart!, selectionEnd!);
+
+      // Call platform-specific method to get text in the selection area
+      final Map<String, dynamic> result =
+          await PDFRenderer.platform.invokeMethod(
+        'getTextInRect',
+        {
+          'page': currentPage.value - 1,
+          'rect': {
+            'left': selectionRect.left,
+            'top': selectionRect.top,
+            'right': selectionRect.right,
+            'bottom': selectionRect.bottom,
+          },
+        },
+      );
+
+      if (result['text'] != null) {
+        selectedTexts.add(PDFTextSelection(
+          bounds: selectionRect,
+          text: result['text'],
+          pageNumber: currentPage.value,
+        ));
+      }
+
+      selectionStart = null;
+      selectionEnd = null;
+      update();
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to process text selection: $e',
+          snackPosition: SnackPosition.BOTTOM);
+    }
+  }
+
+  // Replace selected text
+  Future<void> replaceSelectedText(String newText) async {
+    try {
+      if (selectedTexts.isEmpty) return;
+
+      final selection = selectedTexts.last;
+
+      await PDFRenderer.platform.invokeMethod('replaceText', {
+        'page': selection.pageNumber - 1,
+        'rect': {
+          'left': selection.bounds.left,
+          'top': selection.bounds.top,
+          'right': selection.bounds.right,
+          'bottom': selection.bounds.bottom,
+        },
+        'newText': newText,
+      });
+
+      selectedTexts.removeLast();
+      update();
+
+      // Refresh the page to show changes
+      await pdfViewController.setPage(currentPage.value - 1);
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to replace text: $e',
+          snackPosition: SnackPosition.BOTTOM);
+    }
   }
 
   void startHighlight() {
@@ -245,11 +341,10 @@ class PDFController extends GetxController {
         await openPDF(path);
 
         final newFile = PDFFile(
-          name: result.files.single.name,
-          path: path,
-          timestamp: DateTime.now(),
-          size: 0
-        );
+            name: result.files.single.name,
+            path: path,
+            timestamp: DateTime.now(),
+            size: 0);
 
         recentFiles.insert(0, newFile);
         if (recentFiles.length > 10) {
@@ -269,7 +364,9 @@ class PDFController extends GetxController {
   Future<void> openPDF(String path) async {
     try {
       isLoading.value = true;
-
+      // Close existing renderer before opening new document
+      await PDFRenderer.closeRenderer();
+      await PDFRenderer.initializeRenderer();
       // Check if the file path is valid before proceeding
       if (path.isEmpty) {
         throw FormatException("Invalid file path.");
@@ -288,14 +385,17 @@ class PDFController extends GetxController {
       update();
       Get.toNamed(AppRoutes.pdfEditView);
     } on FormatException catch (e) {
+      print('the format exception error : $e');
       // Handle specific format errors (e.g., invalid file path)
       Get.snackbar('Error', 'Invalid file path: $e',
           snackPosition: SnackPosition.BOTTOM);
     } on PlatformException catch (e) {
       // Handle errors specific to platform methods (e.g., invoking platform channels)
+      print('the platform error : $e');
       Get.snackbar('Error', 'Platform error: $e',
           snackPosition: SnackPosition.BOTTOM);
     } on Exception catch (e) {
+      print('the Exception error : $e');
       // Catch any general errors not specifically handled above
       Get.snackbar('Error', 'An unexpected error occurred: $e',
           snackPosition: SnackPosition.BOTTOM);
