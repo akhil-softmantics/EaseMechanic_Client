@@ -15,7 +15,7 @@ class InitialScreen extends StatelessWidget {
     return GetMaterialApp(
       debugShowCheckedModeBanner: false,
       getPages: AppRoutes.pages,
-      initialRoute: AppRoutes.homePage,
+      initialRoute: AppRoutes.pdfEdit,
     );
   }
 }
