@@ -1,14 +1,15 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:ease/core/utils/Routes/routes.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 import '../../../../core/utils/pdfRender.dart';
 import '../../../../models/pdfFileModel.dart';
@@ -37,6 +38,7 @@ class PDFController extends GetxController {
   Offset? selectionStart;
   Offset? selectionEnd;
 
+  PdfDocument? _pdfDocument;
   @override
   void onInit() {
     super.onInit();
@@ -50,6 +52,96 @@ class PDFController extends GetxController {
     textEditingController.dispose();
     saveRecentFiles();
     super.onClose();
+  }
+
+  // Future<void> deleteSelectedText(PDFTextSelection selection) async {
+  //   try {
+  //     await PDFRenderer.platform.invokeMethod('replaceText', {
+  //       'page': selection.pageNumber - 1,
+  //       'rect': {
+  //         'left': selection.bounds.left,
+  //         'top': selection.bounds.top,
+  //         'right': selection.bounds.right,
+  //         'bottom': selection.bounds.bottom,
+  //       },
+  //       'newText': '',
+  //     });
+
+  //     selectedTexts.remove(selection);
+  //     update();
+  //     await pdfViewController.setPage(currentPage.value - 1);
+  //   } catch (e) {
+  //     Get.snackbar('Error', 'Failed to delete text: $e',
+  //         snackPosition: SnackPosition.BOTTOM);
+  //   }
+  // }
+
+// In PDFController class, replace the replaceSelectedText method with:
+
+  Future<void> replaceSelectedText(
+      PDFTextSelection selection, String newText) async {
+    try {
+      if (_pdfDocument == null) return;
+
+      PdfPage page = _pdfDocument!.pages[selection.pageNumber - 1];
+
+      // Create a standard font for the annotation
+      PdfStandardFont font = PdfStandardFont(PdfFontFamily.helvetica, 12);
+
+      // Create text element with the new text
+      PdfTextElement textElement = PdfTextElement(
+          text: newText, font: font, brush: PdfSolidBrush(PdfColor(0, 0, 0)));
+
+      // Draw the text element at the selection bounds
+      textElement.draw(
+          page: page,
+          bounds: Rect.fromLTWH(selection.bounds.left, selection.bounds.top,
+              selection.bounds.width, selection.bounds.height));
+
+      await _saveChanges();
+      await pdfViewController.setPage(currentPage.value - 1);
+
+      selectedTexts.remove(selection);
+      update();
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to replace text: $e');
+    }
+  }
+
+  Future<void> deleteSelectedText(PDFTextSelection selection) async {
+    try {
+      await replaceSelectedText(
+          selection, ''); // Replace with empty string to delete
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to delete text: $e');
+    }
+  }
+
+  Future<void> _saveChanges() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final outputPath =
+          '${tempDir.path}/edited_${DateTime.now().millisecondsSinceEpoch}.pdf';
+
+      // Save changes using Syncfusion
+      File(outputPath).writeAsBytes(await _pdfDocument!.save());
+
+      // Update the document path for rendering
+      document.value = PDFDocument(filePath: outputPath);
+
+      Get.snackbar('Success', 'Changes saved successfully');
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to save changes: $e');
+    }
+  }
+
+  Future<void> finalizeTextSelection() async {
+    if (selectionStart != null && selectionEnd != null) {
+      await _processTextSelection();
+      selectionStart = null;
+      selectionEnd = null;
+      update();
+    }
   }
 
   // Add this method to toggle text selection mode
@@ -112,34 +204,34 @@ class PDFController extends GetxController {
     }
   }
 
-  // Replace selected text
-  Future<void> replaceSelectedText(String newText) async {
-    try {
-      if (selectedTexts.isEmpty) return;
+  // // Replace selected text
+  // Future<void> replaceSelectedText(String newText) async {
+  //   try {
+  //     if (selectedTexts.isEmpty) return;
 
-      final selection = selectedTexts.last;
+  //     final selection = selectedTexts.last;
 
-      await PDFRenderer.platform.invokeMethod('replaceText', {
-        'page': selection.pageNumber - 1,
-        'rect': {
-          'left': selection.bounds.left,
-          'top': selection.bounds.top,
-          'right': selection.bounds.right,
-          'bottom': selection.bounds.bottom,
-        },
-        'newText': newText,
-      });
+  //     await PDFRenderer.platform.invokeMethod('replaceText', {
+  //       'page': selection.pageNumber - 1,
+  //       'rect': {
+  //         'left': selection.bounds.left,
+  //         'top': selection.bounds.top,
+  //         'right': selection.bounds.right,
+  //         'bottom': selection.bounds.bottom,
+  //       },
+  //       'newText': newText,
+  //     });
 
-      selectedTexts.removeLast();
-      update();
+  //     selectedTexts.removeLast();
+  //     update();
 
-      // Refresh the page to show changes
-      await pdfViewController.setPage(currentPage.value - 1);
-    } catch (e) {
-      Get.snackbar('Error', 'Failed to replace text: $e',
-          snackPosition: SnackPosition.BOTTOM);
-    }
-  }
+  //     // Refresh the page to show changes
+  //     await pdfViewController.setPage(currentPage.value - 1);
+  //   } catch (e) {
+  //     Get.snackbar('Error', 'Failed to replace text: $e',
+  //         snackPosition: SnackPosition.BOTTOM);
+  //   }
+  // }
 
   void startHighlight() {
     isHighlightMode.value = true;
@@ -364,41 +456,18 @@ class PDFController extends GetxController {
   Future<void> openPDF(String path) async {
     try {
       isLoading.value = true;
-      // Close existing renderer before opening new document
-      await PDFRenderer.closeRenderer();
-      await PDFRenderer.initializeRenderer();
-      // Check if the file path is valid before proceeding
-      if (path.isEmpty) {
-        throw FormatException("Invalid file path.");
-      }
+      // Load PDF with Syncfusion for editing
+      _pdfDocument = PdfDocument(inputBytes: await File(path).readAsBytes());
 
+      // Set up flutter_pdfview for rendering
       document.value = PDFDocument(filePath: path);
       resetZoom();
-      bookmarks.clear();
-      drawingPoints.clear();
       currentPage.value = 1;
-
-      await PDFRenderer.platform.invokeMethod('openDocument', {
-        'path': path,
-      });
 
       update();
       Get.toNamed(AppRoutes.pdfEditView);
-    } on FormatException catch (e) {
-      print('the format exception error : $e');
-      // Handle specific format errors (e.g., invalid file path)
-      Get.snackbar('Error', 'Invalid file path: $e',
-          snackPosition: SnackPosition.BOTTOM);
-    } on PlatformException catch (e) {
-      // Handle errors specific to platform methods (e.g., invoking platform channels)
-      print('the platform error : $e');
-      Get.snackbar('Error', 'Platform error: $e',
-          snackPosition: SnackPosition.BOTTOM);
-    } on Exception catch (e) {
-      print('the Exception error : $e');
-      // Catch any general errors not specifically handled above
-      Get.snackbar('Error', 'An unexpected error occurred: $e',
-          snackPosition: SnackPosition.BOTTOM);
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to open PDF: $e');
     } finally {
       isLoading.value = false;
     }

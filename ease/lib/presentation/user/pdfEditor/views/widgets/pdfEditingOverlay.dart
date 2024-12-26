@@ -49,8 +49,8 @@ class EditingOverlay extends StatelessWidget {
 }
 
 // Create a new widget for text selection overlay
-class TextSelectionOverlayForPDf extends StatelessWidget {
-  const TextSelectionOverlayForPDf({Key? key}) : super(key: key);
+class TextSelectionOverlayForPDF extends StatelessWidget {
+  const TextSelectionOverlayForPDF({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -61,7 +61,6 @@ class TextSelectionOverlayForPDf extends StatelessWidget {
 
         return Stack(
           children: [
-            // Selection rectangle
             if (controller.selectionStart != null &&
                 controller.selectionEnd != null)
               Positioned(
@@ -78,15 +77,10 @@ class TextSelectionOverlayForPDf extends StatelessWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.blue.withOpacity(0.2),
-                    border: Border.all(
-                      color: Colors.blue,
-                      width: 1,
-                    ),
+                    border: Border.all(color: Colors.blue, width: 1),
                   ),
                 ),
               ),
-
-            // Selected text boxes
             ...controller.selectedTexts.map(
               (selection) => Positioned(
                 left: selection.bounds.left,
@@ -98,10 +92,7 @@ class TextSelectionOverlayForPDf extends StatelessWidget {
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.blue.withOpacity(0.2),
-                      border: Border.all(
-                        color: Colors.blue,
-                        width: 1,
-                      ),
+                      border: Border.all(color: Colors.blue, width: 1),
                     ),
                   ),
                 ),
@@ -134,7 +125,7 @@ class TextSelectionOverlayForPDf extends StatelessWidget {
           ),
           TextButton(
             onPressed: () {
-              controller.replaceSelectedText(textController.text);
+              controller.replaceSelectedText(selection, textController.text);
               Get.back();
             },
             child: const Text('Replace'),

@@ -593,10 +593,10 @@ packages:
     dependency: "direct main"
     description:
       name: syncfusion_flutter_pdf
-      sha256: e258fad2d9a50509e2c73ec3e786c15be6ab5f1f5650311bd6736dcde2e54247
+      sha256: a88a71d88a6474ae1cf369fc6802687a6ee5612e007025b99f21e4c24a7d73df
       url: "https://pub.dev"
     source: hosted
-    version: "28.1.35"
+    version: "28.1.36"
   synchronized:
     dependency: transitive
     description:
