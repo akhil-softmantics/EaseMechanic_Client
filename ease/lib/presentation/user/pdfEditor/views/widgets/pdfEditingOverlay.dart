@@ -1,11 +1,8 @@
 // lib/widgets/editing_overlay.dart
 
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
-import '../../../../../models/pdfFileModel.dart';
 import '../../../../widgets/annonation_widget.dart';
 import '../../controller/pdfEditor_controller.dart';
 
@@ -21,6 +18,7 @@ class EditingOverlay extends StatelessWidget {
 
         return Stack(
           children: [
+            // Regular text edits
             ...document.textEdits.map(
               (edit) => Positioned(
                 left: edit.position.dx,
@@ -34,6 +32,37 @@ class EditingOverlay extends StatelessWidget {
                 ),
               ),
             ),
+            
+            // Active inline text editors
+            ...controller.activeTextEdits.map((textEdit) {
+              return Positioned(
+                left: textEdit.position.dx,
+                top: textEdit.position.dy,
+                child: InlineTextEditor(
+                  initialText: textEdit.text,
+                  onSubmitted: (newText) {
+                    if (textEdit.bounds != null) {
+                      controller.updateText(
+                        textEdit.pageNumber,
+                        textEdit.bounds!,
+                        newText,
+                      );
+                      controller.activeTextEdits.remove(textEdit);
+                    }
+                  },
+                  onCancel: () {
+                    controller.activeTextEdits.remove(textEdit);
+                    controller.update();
+                  },
+                  style: TextStyle(
+                    fontSize: textEdit.fontSize,
+                    color: textEdit.color,
+                  ),
+                ),
+              );
+            }),
+
+            // Annotations
             ...document.annotations.map(
               (annotation) => Positioned(
                 left: annotation.position.dx,
@@ -48,89 +77,81 @@ class EditingOverlay extends StatelessWidget {
   }
 }
 
-// Create a new widget for text selection overlay
-class TextSelectionOverlayForPDF extends StatelessWidget {
-  const TextSelectionOverlayForPDF({super.key});
+class InlineTextEditor extends StatefulWidget {
+  final String initialText;
+  final Function(String) onSubmitted;
+  final VoidCallback onCancel;
+  final TextStyle style;
+
+  const InlineTextEditor({
+    Key? key,
+    required this.initialText,
+    required this.onSubmitted,
+    required this.onCancel,
+    required this.style,
+  }) : super(key: key);
+
+  @override
+  State<InlineTextEditor> createState() => _InlineTextEditorState();
+}
+
+class _InlineTextEditorState extends State<InlineTextEditor> {
+  late TextEditingController _controller;
+  late FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialText);
+    _focusNode = FocusNode()..requestFocus();
+    
+    // Handle focus loss
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus) {
+        widget.onSubmitted(_controller.text);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GetBuilder<PDFController>(
-      builder: (controller) {
-        if (!controller.isTextSelectionMode.value)
-          return const SizedBox.shrink();
-
-        return Stack(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.blue),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: IntrinsicWidth(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (controller.selectionStart != null &&
-                controller.selectionEnd != null)
-              Positioned(
-                left: min(
-                    controller.selectionStart!.dx, controller.selectionEnd!.dx),
-                top: min(
-                    controller.selectionStart!.dy, controller.selectionEnd!.dy),
-                width: (controller.selectionEnd!.dx -
-                        controller.selectionStart!.dx)
-                    .abs(),
-                height: (controller.selectionEnd!.dy -
-                        controller.selectionStart!.dy)
-                    .abs(),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.2),
-                    border: Border.all(color: Colors.blue, width: 1),
-                  ),
+            Flexible(
+              child: TextFormField(
+                controller: _controller,
+                focusNode: _focusNode,
+                style: widget.style,
+                decoration: const InputDecoration(
+                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  border: InputBorder.none,
                 ),
-              ),
-            ...controller.selectedTexts.map(
-              (selection) => Positioned(
-                left: selection.bounds.left,
-                top: selection.bounds.top,
-                width: selection.bounds.width,
-                height: selection.bounds.height,
-                child: GestureDetector(
-                  onTap: () => _showEditDialog(context, controller, selection),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.2),
-                      border: Border.all(color: Colors.blue, width: 1),
-                    ),
-                  ),
-                ),
+                onFieldSubmitted: widget.onSubmitted,
               ),
             ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 16),
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(),
+              onPressed: widget.onCancel,
+            ),
           ],
-        );
-      },
-    );
-  }
-
-  void _showEditDialog(BuildContext context, PDFController controller,
-      PDFTextSelection selection) {
-    final textController = TextEditingController(text: selection.text);
-
-    Get.dialog(
-      AlertDialog(
-        title: const Text('Edit Text'),
-        content: TextField(
-          controller: textController,
-          decoration: const InputDecoration(
-            hintText: 'Enter new text',
-          ),
-          maxLines: null,
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              controller.replaceSelectedText(selection, textController.text);
-              Get.back();
-            },
-            child: const Text('Replace'),
-          ),
-        ],
       ),
     );
   }

@@ -37,8 +37,13 @@ class PDFController extends GetxController {
   final RxBool isEditingText = false.obs;
   Offset? selectionStart;
   Offset? selectionEnd;
+  PdfTextExtractor? _textExtractor;
+  final RxList<PDFTextEdit> activeTextEdits = <PDFTextEdit>[].obs;
 
-  PdfDocument? _pdfDocument;
+  // late PDFViewController pdfViewController;
+  PdfDocument? pdfDocument;
+  // final RxBool isEditingText = false.obs;
+  // PdfDocument? pdfDocument;
   @override
   void onInit() {
     super.onInit();
@@ -51,9 +56,53 @@ class PDFController extends GetxController {
     PDFRenderer.closeRenderer();
     textEditingController.dispose();
     saveRecentFiles();
+    pdfViewController.reactive;
     super.onClose();
   }
 
+// Add this method to your PDFController class
+  void startInlineEdit(PDFTextEdit textEdit) {
+    activeTextEdits.add(textEdit);
+    update();
+  }
+
+  // Add to your PDFController class
+  Future<void> updateText(int pageNumber, Rect bounds, String newText) async {
+    try {
+      if (pdfDocument == null) return;
+
+      final page = pdfDocument!.pages[pageNumber - 1];
+      final pageSize = page.size;
+      final scale = Get.size.width / pageSize.width;
+
+      final pdfBounds = Rect.fromLTWH(
+        bounds.left / scale,
+        bounds.top / scale,
+        bounds.width / scale,
+        bounds.height / scale,
+      );
+
+      // Create a standard font
+      final font = PdfStandardFont(PdfFontFamily.helvetica, currentFontSize);
+
+      // Draw the new text
+      page.graphics.drawString(
+        newText,
+        font,
+        bounds: pdfBounds,
+        brush: PdfSolidBrush(PdfColor(
+          currentColor.red,
+          currentColor.green,
+          currentColor.blue,
+        )),
+      );
+
+      await saveChanges();
+      await pdfViewController.setPage(pageNumber - 1);
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to update text: $e');
+    }
+  }
   // Future<void> deleteSelectedText(PDFTextSelection selection) async {
   //   try {
   //     await PDFRenderer.platform.invokeMethod('replaceText', {
@@ -81,28 +130,41 @@ class PDFController extends GetxController {
   Future<void> replaceSelectedText(
       PDFTextSelection selection, String newText) async {
     try {
-      if (_pdfDocument == null) return;
+      if (pdfDocument == null) return;
 
-      PdfPage page = _pdfDocument!.pages[selection.pageNumber - 1];
+      PdfPage page = pdfDocument!.pages[selection.pageNumber - 1];
+      final pageSize = page.size;
+      final scale = Get.size.width / pageSize.width;
 
-      // Create a standard font for the annotation
+      // Convert screen coordinates to PDF coordinates
+      final pdfBounds = Rect.fromLTWH(
+        selection.bounds.left / scale,
+        selection.bounds.top / scale,
+        selection.bounds.width / scale,
+        selection.bounds.height / scale,
+      );
+
+      // Create a text element with the new text
       PdfStandardFont font = PdfStandardFont(PdfFontFamily.helvetica, 12);
-
-      // Create text element with the new text
       PdfTextElement textElement = PdfTextElement(
-          text: newText, font: font, brush: PdfSolidBrush(PdfColor(0, 0, 0)));
+        text: newText,
+        font: font,
+        brush: PdfSolidBrush(PdfColor(0, 0, 0)),
+      );
 
-      // Draw the text element at the selection bounds
+      // Draw the new text
       textElement.draw(
-          page: page,
-          bounds: Rect.fromLTWH(selection.bounds.left, selection.bounds.top,
-              selection.bounds.width, selection.bounds.height));
+        page: page,
+        bounds: pdfBounds,
+      );
 
-      await _saveChanges();
-      await pdfViewController.setPage(currentPage.value - 1);
-
+      // Save changes and refresh the view
+      await saveChanges();
       selectedTexts.remove(selection);
       update();
+
+      // Refresh the current page
+      await pdfViewController.setPage(currentPage.value - 1);
     } catch (e) {
       Get.snackbar('Error', 'Failed to replace text: $e');
     }
@@ -117,19 +179,17 @@ class PDFController extends GetxController {
     }
   }
 
-  Future<void> _saveChanges() async {
+  Future<void> saveChanges() async {
     try {
       final tempDir = await getTemporaryDirectory();
       final outputPath =
           '${tempDir.path}/edited_${DateTime.now().millisecondsSinceEpoch}.pdf';
 
-      // Save changes using Syncfusion
-      File(outputPath).writeAsBytes(await _pdfDocument!.save());
+      // Save the modified PDF
+      File(outputPath).writeAsBytes(await pdfDocument!.save());
 
-      // Update the document path for rendering
+      // Update the document path
       document.value = PDFDocument(filePath: outputPath);
-
-      Get.snackbar('Success', 'Changes saved successfully');
     } catch (e) {
       Get.snackbar('Error', 'Failed to save changes: $e');
     }
@@ -166,31 +226,81 @@ class PDFController extends GetxController {
     update();
   }
 
+  Future<void> _handleTapForEditing(BuildContext context, Offset point) async {
+    try {
+      if (pdfDocument == null) return;
+
+      final page = pdfDocument!.pages[currentPage.value - 1];
+      final textExtractor = PdfTextExtractor(pdfDocument!);
+
+      // Calculate tap area bounds
+      final tapAreaSize = 50.0;
+      final bounds = Rect.fromCenter(
+        center: point,
+        width: tapAreaSize,
+        height: tapAreaSize,
+      );
+
+      // Extract text around the tap point
+      final extractedText = textExtractor.extractText(
+        startPageIndex: currentPage.value - 1,
+        endPageIndex: currentPage.value - 1,
+        // bounds: bounds,
+      );
+
+      if (extractedText.isNotEmpty) {
+        startInlineEdit(
+          PDFTextEdit(
+            text: extractedText,
+            position: point,
+            bounds: bounds,
+            pageNumber: currentPage.value,
+            fontSize: currentFontSize,
+            color: currentColor,
+          ),
+        );
+      }
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to extract text: $e');
+    }
+  }
+
   // Process the text selection
   Future<void> _processTextSelection() async {
     try {
-      final Rect selectionRect =
-          Rect.fromPoints(selectionStart!, selectionEnd!);
+      if (pdfDocument == null || selectionStart == null || selectionEnd == null)
+        return;
 
-      // Call platform-specific method to get text in the selection area
-      final Map<String, dynamic> result =
-          await PDFRenderer.platform.invokeMethod(
-        'getTextInRect',
-        {
-          'page': currentPage.value - 1,
-          'rect': {
-            'left': selectionRect.left,
-            'top': selectionRect.top,
-            'right': selectionRect.right,
-            'bottom': selectionRect.bottom,
-          },
-        },
+      // Create text extractor if not exists
+      _textExtractor ??= PdfTextExtractor(pdfDocument!);
+
+      // Convert screen coordinates to PDF coordinates
+      // You might need to adjust these calculations based on your PDF view scaling
+      final pageSize = pdfDocument!.pages[currentPage.value - 1].size;
+      final scale = Get.size.width / pageSize.width;
+
+      final pdfRect = Rect.fromPoints(
+        Offset(
+          selectionStart!.dx / scale,
+          selectionStart!.dy / scale,
+        ),
+        Offset(
+          selectionEnd!.dx / scale,
+          selectionEnd!.dy / scale,
+        ),
       );
 
-      if (result['text'] != null) {
+      // Extract text from the selected area
+      final extractedText = _textExtractor!.extractText(
+        startPageIndex: currentPage.value - 1,
+        endPageIndex: currentPage.value - 1,
+        // bounds: pdfRect,
+      );
+
+      if (extractedText.isNotEmpty) {
         selectedTexts.add(PDFTextSelection(
-          bounds: selectionRect,
-          text: result['text'],
+          bounds: Rect.fromPoints(selectionStart!, selectionEnd!),
+          text: extractedText,
           pageNumber: currentPage.value,
         ));
       }
@@ -199,8 +309,11 @@ class PDFController extends GetxController {
       selectionEnd = null;
       update();
     } catch (e) {
-      Get.snackbar('Error', 'Failed to process text selection: $e',
-          snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'Error',
+        'Failed to process text selection: $e',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     }
   }
 
@@ -457,7 +570,7 @@ class PDFController extends GetxController {
     try {
       isLoading.value = true;
       // Load PDF with Syncfusion for editing
-      _pdfDocument = PdfDocument(inputBytes: await File(path).readAsBytes());
+      pdfDocument = PdfDocument(inputBytes: await File(path).readAsBytes());
 
       // Set up flutter_pdfview for rendering
       document.value = PDFDocument(filePath: path);

@@ -53,7 +53,7 @@ class PDFEditorView extends StatelessWidget {
             ),
           ),
           const EditingOverlay(),
-          const TextSelectionOverlayForPDF(),
+          // const TextSelectionOverlayForPDF(),
           const PDFDrawingOverlay(),
           const ToolbarWidget(),
         ],
