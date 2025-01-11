@@ -67,3 +67,4 @@ class MainActivity: FlutterActivity() {
        super.onDestroy()
    }
 }
+
